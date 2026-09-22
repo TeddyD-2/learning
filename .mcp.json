@@ -1,0 +1,9 @@
+{
+	"mcpServers": {
+		"learn": {
+			"command": "node",
+			"args": ["learn-server/mcp.js"],
+			"env": {}
+		}
+	}
+}

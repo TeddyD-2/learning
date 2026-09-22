@@ -1,0 +1,12 @@
+{
+	"enableAllProjectMcpServers": true,
+	"permissions": {
+		"allow": [
+			"mcp__learn__log",
+			"mcp__learn__quiz",
+			"mcp__learn__ask_user_question",
+			"WebSearch",
+			"WebFetch"
+		]
+	}
+}

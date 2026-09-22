@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>learn://session</title>
+		<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>▚</text></svg>" />
+		<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" />
+		<link rel="stylesheet" href="style.css" />
+	</head>
+	<body>
+		<header class="bar">
+			<span class="dot" id="status-dot"></span>
+			<span class="bar-title">learn</span>
+			<span class="bar-path" id="bar-path" title="the file this lesson is being saved to">no session yet</span>
+			<span class="bar-model" id="bar-model" title="self-reported by the teaching agent"></span>
+			<span class="bar-right">
+				<button class="chip" id="btn-sessions" type="button">sessions</button>
+				<button class="chip" id="btn-new" type="button">new</button>
+				<span class="conn" id="bar-conn">connecting…</span>
+			</span>
+		</header>
+
+
+		<div class="archive-bar" id="archive-bar" hidden>
+			<span id="archive-name"></span>
+			<button class="chip" id="btn-live" type="button">← back to live</button>
+		</div>
+
+		<main id="stream" class="stream">
+			<div class="boot">
+				<pre class="logo">
+ ┌──────────────────────────────────────────┐
+ │  l e a r n                               │
+ │  unconditional truths → derived nodes    │
+ └──────────────────────────────────────────┘</pre>
+				<p class="muted">Connecting…</p>
+			</div>
+		</main>
+
+		<button class="jump" id="btn-jump" type="button" hidden>↓ latest</button>
+
+		<aside class="drawer" id="drawer" hidden>
+			<div class="drawer-head">
+				<span>sessions</span>
+				<button class="chip" id="btn-close-drawer" type="button">esc</button>
+			</div>
+			<div class="drawer-search">
+				<input id="session-filter" type="search" placeholder="filter lessons…" autocomplete="off" />
+			</div>
+			<ul class="session-list" id="session-list"></ul>
+		</aside>
+		<div class="scrim" id="scrim" hidden></div>
+
+		<footer class="hint" id="hint"></footer>
+
+		<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+		<script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+		<script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+		<script type="module" src="app.js"></script>
+	</body>
+</html>

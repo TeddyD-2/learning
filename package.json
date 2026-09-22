@@ -1,0 +1,10 @@
+{
+	"name": "learn",
+	"version": "1.0.0",
+	"private": true,
+	"type": "module",
+	"description": "A Claude Code learning system with a terminal-styled localhost UI",
+	"scripts": {
+		"start": "node learn-server/mcp.js --serve"
+	}
+}
