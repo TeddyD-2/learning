@@ -3,7 +3,8 @@
 		"learn": {
 			"command": "node",
 			"args": ["learn-server/mcp.js"],
-			"env": {}
+			"env": {},
+			"timeout": 86400000
 		}
 	}
 }

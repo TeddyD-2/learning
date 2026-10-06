@@ -666,6 +666,22 @@ async function handle(msg) {
 		case "tools/call": {
 			const name = params?.name;
 			const args = params?.arguments || {};
+			// Quizzes and drills wait on a human, sometimes for hours. If the
+			// client gave us a progress token, keep telling it we're alive so it
+			// doesn't abandon the call as stalled. (.mcp.json also sets a long
+			// timeout, for clients that don't send a token.)
+			const token = params?._meta?.progressToken;
+			let beats = 0;
+			const heartbeat =
+				token === undefined
+					? null
+					: setInterval(() => {
+							send({
+								jsonrpc: "2.0",
+								method: "notifications/progress",
+								params: { progressToken: token, progress: ++beats, message: "waiting for the learner" },
+							});
+						}, 25_000);
 			try {
 				let text;
 				if (name === "quiz") text = await runQuiz(args);
@@ -681,6 +697,8 @@ async function handle(msg) {
 			} catch (err) {
 				if (err.learnerQuestion) reply(id, { content: [{ type: "text", text: withQueuedQuestions(interruptedBy(err, name, args)) }] });
 				else reply(id, { content: [{ type: "text", text: `Error: ${err.message}` }], isError: true });
+			} finally {
+				if (heartbeat) clearInterval(heartbeat);
 			}
 			return;
 		}
