@@ -46,6 +46,14 @@ let history = [];
 /** Prompts still waiting on the learner, by id. */
 const pending = new Map();
 
+/** Questions the learner asked that haven't reached the agent yet. */
+const questions = [];
+
+/** Hand over (and clear) the learner's queued questions. */
+export function takeQuestions() {
+	return questions.splice(0);
+}
+
 let nextId = 1;
 let baseUrl = "";
 let opened = false;
@@ -243,6 +251,46 @@ const server = http.createServer(async (req, res) => {
 		pending.delete(body.id);
 		json(res, { ok: true });
 		entry.resolve(body);
+		return;
+	}
+
+	// The learner asks the teacher something mid-lesson. MCP only lets the
+	// agent hear from us when a tool call returns, so: if a question or quiz
+	// is open, close it and hand the agent the learner's question as that
+	// tool's result (it answers, then asks again). A drill keeps running, since
+	// closing it would throw away the learner's progress, so the question waits
+	// in the queue and rides along with the next tool result.
+	if (url.pathname === "/api/question" && req.method === "POST") {
+		let body;
+		try {
+			body = await readBody(req);
+		} catch {
+			res.writeHead(400).end("bad json");
+			return;
+		}
+		const text = String(body.text || "").trim();
+		if (!text) {
+			json(res, { ok: false, reason: "empty" }, 400);
+			return;
+		}
+		emit({ type: "learner_question", text });
+		sessionLog.append(`### You asked\n\n> ${text.replace(/\n/g, "\n> ")}`);
+		noteSession();
+		const open = [...pending].reverse().find(([, e]) => e.record.kind !== "match");
+		if (open) {
+			const [id, entry] = open;
+			pending.delete(id);
+			emit({ type: "prompt_cancelled", id, reason: "question" });
+			const err = new Error("learner asked a question");
+			err.learnerQuestion = text;
+			err.draft = typeof body.draft === "string" ? body.draft : "";
+			err.prompt = entry.record;
+			entry.reject(err);
+			json(res, { ok: true, delivered: "now" });
+		} else {
+			questions.push(text);
+			json(res, { ok: true, delivered: [...pending.values()].length ? "after-drill" : "queued" });
+		}
 		return;
 	}
 

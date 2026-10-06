@@ -375,6 +375,7 @@ function addPrompt(p) {
 		answered: false,
 		focused: true,
 		isQuiz,
+		isFree,
 		textarea,
 		submit,
 		key(e) {
@@ -412,6 +413,8 @@ function addPrompt(p) {
 	hint.textContent = items.length
 		? "↑↓ move · space or 1-9 select · enter submit · tab for the text field"
 		: "type your answer · ctrl+enter to submit";
+	// Re-asked after the learner paused it for a question: give back their draft.
+	if (p.draft) textarea.value = p.draft;
 	refresh();
 	append(wrap);
 	if (freeText) textarea.focus();
@@ -481,7 +484,7 @@ function resolvePrompt(id, r) {
 	if (atBottom()) stream.scrollTop = stream.scrollHeight;
 }
 
-function cancelPrompt(id) {
+function cancelPrompt(id, reason) {
 	const ctl = prompts.get(id);
 	if (!ctl || ctl.answered) return;
 	if (ctl.isMatch) ctl.cancel();
@@ -493,10 +496,95 @@ function cancelPrompt(id) {
 	ctl.el.querySelector(".actions")?.remove();
 	ctl.el.querySelector(".field")?.remove();
 	for (const row of ctl.rows || []) row.classList.remove("cursor");
-	// Usually the old session ended before this was answered; resume tells
-	// the teacher, who asks it again.
-	ctl.el.appendChild(el("div", "explain", "(closed before it was answered; the teacher will ask it again)"));
+	// Either the learner paused it to ask a question, or the old session ended
+	// before it was answered. Both ways the teacher asks it again.
+	ctl.el.appendChild(
+		el(
+			"div",
+			"explain",
+			reason === "question"
+				? "(paused for your question; the teacher will answer it, then ask this again)"
+				: "(closed before it was answered; the teacher will ask it again)",
+		),
+	);
 }
+
+// ── asking the teacher ──────────────────────────────────────────────────────
+
+function addLearnerQuestion(text) {
+	const block = el("div", "block asked");
+	block.appendChild(el("div", "asked-head", "you asked"));
+	const body = el("div", "asked-body");
+	body.textContent = text;
+	block.appendChild(body);
+	append(block);
+}
+
+const askBox = document.getElementById("ask");
+const askInput = document.getElementById("ask-input");
+const askStatus = document.getElementById("ask-status");
+
+function openAsk() {
+	askBox.hidden = false;
+	askStatus.textContent = "";
+	askInput.focus();
+}
+
+function closeAsk() {
+	askBox.hidden = true;
+	askInput.blur();
+}
+
+async function sendQuestion() {
+	const text = askInput.value.trim();
+	if (!text) return;
+	// A half-written free response travels with the question, so the teacher
+	// can hand it back when the prompt is re-asked.
+	const draft = activePrompt?.isFree ? activePrompt.textarea.value : "";
+	askStatus.textContent = "sending…";
+	const res = await fetch("/api/question", {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify({ text, draft }),
+	})
+		.then((r) => r.json())
+		.catch(() => null);
+	if (!res?.ok) {
+		askStatus.textContent = "couldn't send; is the session still running?";
+		return;
+	}
+	askInput.value = "";
+	closeAsk();
+	hint.textContent =
+		res.delivered === "now"
+			? "sent: the teacher will answer in the log"
+			: res.delivered === "after-drill"
+				? "sent: the teacher gets it when this drill ends"
+				: "sent: the teacher gets it at the next step";
+}
+
+document.getElementById("btn-ask").addEventListener("click", () => (askBox.hidden ? openAsk() : closeAsk()));
+document.getElementById("btn-ask-send").addEventListener("click", sendQuestion);
+document.getElementById("btn-ask-close").addEventListener("click", closeAsk);
+askInput.addEventListener("keydown", (e) => {
+	// Keys typed here belong to the question only: Enter must never reach the
+	// open prompt's handler, where it would submit the learner's draft.
+	e.stopPropagation();
+	if (e.key === "Enter" && !e.shiftKey) {
+		e.preventDefault();
+		sendQuestion();
+	} else if (e.key === "Escape") {
+		e.preventDefault();
+		closeAsk();
+	}
+});
+document.addEventListener("keydown", (e) => {
+	if (e.key !== "?" || e.ctrlKey || e.metaKey || e.altKey) return;
+	if (e.target.closest?.("input, textarea")) return;
+	e.preventDefault();
+	e.stopImmediatePropagation();
+	openAsk();
+}, true);
 
 
 // ── matching drill ──────────────────────────────────────────────────────────
@@ -914,6 +1002,8 @@ document.addEventListener("keydown", (e) => {
 
 document.addEventListener("keydown", (e) => {
 	if (!activePrompt || activePrompt.answered) return;
+	// Typing in the ask box or the sessions filter is never an answer.
+	if (e.target.closest?.("#ask, #drawer")) return;
 	activePrompt.key(e);
 });
 
@@ -929,7 +1019,8 @@ function apply(ev) {
 	else if (ev.type === "prompt") ev.prompt.kind === "match" ? addMatch(ev.prompt) : addPrompt(ev.prompt);
 	else if (ev.type === "progress") renderMap(ev.map);
 	else if (ev.type === "prompt_resolved") resolvePrompt(ev.id, ev.resolution || {});
-	else if (ev.type === "prompt_cancelled") cancelPrompt(ev.id);
+	else if (ev.type === "prompt_cancelled") cancelPrompt(ev.id, ev.reason);
+	else if (ev.type === "learner_question") addLearnerQuestion(ev.text);
 }
 
 /** Rebuild the live view from the server's history. */

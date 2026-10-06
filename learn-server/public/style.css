@@ -1244,3 +1244,82 @@ body.has-map:not(.map-hidden) .map-pill {
 	max-height: 92vh;
 	border: 1px solid var(--accent-dim);
 }
+
+/* ── asking the teacher ────────────────────────────────────────────────── */
+
+button.chip.ask-btn {
+	border-color: var(--warn);
+	color: var(--warn);
+}
+
+.ask {
+	position: fixed;
+	left: 50%;
+	bottom: 40px;
+	transform: translateX(-50%);
+	width: min(640px, calc(100vw - 32px));
+	background: var(--bg-panel);
+	border: 1px solid var(--warn);
+	box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+	padding: 10px 12px;
+	z-index: 30;
+}
+
+.ask-head {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	font-size: 11px;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--warn);
+	margin-bottom: 8px;
+}
+
+.ask textarea {
+	width: 100%;
+	box-sizing: border-box;
+	background: var(--bg-raised);
+	border: 1px solid var(--line);
+	color: var(--fg);
+	font-family: var(--mono);
+	font-size: 13px;
+	padding: 8px;
+	resize: vertical;
+}
+
+.ask textarea:focus {
+	outline: none;
+	border-color: var(--warn);
+}
+
+.ask-foot {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-top: 8px;
+}
+
+.ask-status {
+	font-size: 11px;
+	color: var(--fg-dim);
+}
+
+.block.asked {
+	border-left: 2px solid var(--warn);
+	padding: 6px 12px;
+	margin-top: 14px;
+}
+
+.asked-head {
+	font-size: 11px;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--warn);
+	margin-bottom: 4px;
+}
+
+.asked-body {
+	white-space: pre-wrap;
+	color: var(--fg);
+}

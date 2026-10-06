@@ -181,6 +181,7 @@ const TOOLS = [
 				question: { type: "string", description: "The prompt, in markdown. Images allowed via ![alt](/files/…)." },
 				details: { type: "string", description: "Optional extra context or instructions shown under the question." },
 				target: { type: "string", description: "Optional target length shown beside the live count, e.g. '4–5 sentences'." },
+				draft: { type: "string", description: "Optional text to pre-fill, e.g. the draft the learner had written when they paused to ask a question." },
 			},
 			required: ["question"],
 			additionalProperties: false,
@@ -377,6 +378,29 @@ function runProgress(args) {
 	return progressSummary();
 }
 
+// ── learner questions ───────────────────────────────────────────────────────
+
+/** Tool result when the learner asked something instead of answering the open prompt. */
+function interruptedBy(err, tool, args) {
+	const lines = [
+		`The learner asked a question instead of answering this ${tool.replace("_", " ")}, so it was closed in the UI:`,
+		"",
+		`> ${err.learnerQuestion}`,
+		"",
+		"Answer it now: teach it properly (teach skill, mirrored with `log`), check it landed if it's substantive, then ask the closed prompt again.",
+	];
+	if (args.question) lines.push(`The closed prompt was: ${plain(args.question, 200)}`);
+	if (err.draft?.trim()) lines.push("", "They had started writing this; pass it back as `draft` when you re-ask so nothing is lost:", err.draft);
+	return lines.join("\n");
+}
+
+/** Attach questions the learner asked while no prompt was open. */
+function withQueuedQuestions(text) {
+	const qs = ui.takeQuestions();
+	if (!qs.length) return text;
+	return `${text}\n\nThe learner also asked, while you were working (answer before moving on):\n${qs.map((q) => `> ${q}`).join("\n")}`;
+}
+
 // ── free response ───────────────────────────────────────────────────────────
 
 async function runFreeResponse(args) {
@@ -385,6 +409,7 @@ async function runFreeResponse(args) {
 		question: String(args.question),
 		details: args.details,
 		target: args.target,
+		draft: args.draft ? String(args.draft) : "",
 		options: [],
 	});
 	const text = String(answer.text || "").trim();
@@ -474,6 +499,10 @@ function runResume(args) {
 	const prompts = new Map(events.filter((e) => e.type === "prompt").map((e) => [e.prompt.id, e.prompt]));
 	const graded = [];
 	for (const e of events) {
+		if (e.type === "learner_question") {
+			graded.push(`- learner asked: ${plain(e.text, 200)}`);
+			continue;
+		}
 		if (e.type !== "prompt_resolved") continue;
 		const p = prompts.get(e.id);
 		const r = e.resolution || {};
@@ -648,9 +677,10 @@ async function handle(msg) {
 				else if (name === "sessions") text = runSessions();
 				else if (name === "resume") text = runResume(args);
 				else throw new Error(`unknown tool: ${name}`);
-				reply(id, { content: [{ type: "text", text }] });
+				reply(id, { content: [{ type: "text", text: withQueuedQuestions(text) }] });
 			} catch (err) {
-				reply(id, { content: [{ type: "text", text: `Error: ${err.message}` }], isError: true });
+				if (err.learnerQuestion) reply(id, { content: [{ type: "text", text: withQueuedQuestions(interruptedBy(err, name, args)) }] });
+				else reply(id, { content: [{ type: "text", text: `Error: ${err.message}` }], isError: true });
 			}
 			return;
 		}

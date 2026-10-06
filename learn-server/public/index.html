@@ -16,6 +16,7 @@
 			<span class="bar-model" id="bar-model" title="self-reported by the teaching agent"></span>
 			<span class="bar-right">
 				<button class="chip map-pill" id="btn-map" type="button" title="show / hide the progress map (m)" hidden>map <span id="map-pill-stats"></span></button>
+				<button class="chip ask-btn" id="btn-ask" type="button" title="ask the teacher a question (?)">ask ?</button>
 				<button class="chip" id="btn-sessions" type="button">sessions</button>
 				<button class="chip" id="btn-new" type="button">new</button>
 				<span class="conn" id="bar-conn">connecting…</span>
@@ -65,6 +66,18 @@
 			<ul class="session-list" id="session-list"></ul>
 		</aside>
 		<div class="scrim" id="scrim" hidden></div>
+
+		<div class="ask" id="ask" hidden>
+			<div class="ask-head">
+				<span>ask the teacher</span>
+				<button class="chip" id="btn-ask-close" type="button">esc</button>
+			</div>
+			<textarea id="ask-input" rows="3" placeholder="Anything you're confused about. Enter sends, shift+enter for a new line."></textarea>
+			<div class="ask-foot">
+				<span class="ask-status" id="ask-status"></span>
+				<button class="submit" id="btn-ask-send" type="button">SEND ⏎</button>
+			</div>
+		</div>
 
 		<footer class="hint" id="hint"></footer>
 
