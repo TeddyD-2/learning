@@ -6,20 +6,22 @@
 
 import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.esm.min.mjs";
 
+// Diagrams follow the page: paper and ink, or the muted dark variant.
+const darkScheme = window.matchMedia("(prefers-color-scheme: dark)").matches;
 mermaid.initialize({
 	startOnLoad: false,
-	theme: "dark",
+	theme: "base",
 	securityLevel: "loose",
 	themeVariables: {
-		fontFamily: '"Cascadia Code", "JetBrains Mono", Consolas, monospace',
-		fontSize: "14px",
-		background: "#131a16",
-		primaryColor: "#16241d",
-		primaryTextColor: "#c8d6cd",
-		primaryBorderColor: "#2b6f4c",
-		lineColor: "#46d68a",
-		secondaryColor: "#1b2a22",
-		tertiaryColor: "#0f1512",
+		fontFamily: '"Source Serif 4", Georgia, serif',
+		fontSize: "15px",
+		background: darkScheme ? "#292723" : "#efebe1",
+		primaryColor: darkScheme ? "#211f1c" : "#fbf9f4",
+		primaryTextColor: darkScheme ? "#e4dfd4" : "#23211d",
+		primaryBorderColor: darkScheme ? "#857f74" : "#8a8478",
+		lineColor: darkScheme ? "#8fbfa5" : "#2f5d4a",
+		secondaryColor: darkScheme ? "#292723" : "#efebe1",
+		tertiaryColor: darkScheme ? "#1b1a18" : "#f6f3ec",
 	},
 });
 
@@ -237,7 +239,7 @@ function addPrompt(p) {
 	const list = el("ul", "opts");
 	items.forEach((opt, i) => {
 		const row = el("li", `opt${opt.dontKnow ? " dontknow" : ""}`);
-		row.appendChild(el("span", "box", "[ ]"));
+		row.appendChild(el("span", "box", p.multiSelect ? "□" : "○"));
 		row.appendChild(el("span", "num", `${i + 1}.`));
 		const label = el("span", "label");
 		const labelText = el("span", "label-text");
@@ -298,7 +300,7 @@ function addPrompt(p) {
 			const on = selected.has(i);
 			row.classList.toggle("checked", on);
 			row.classList.toggle("cursor", i === cursor && ctl.focused);
-			row.querySelector(".box").textContent = on ? "[x]" : "[ ]";
+			row.querySelector(".box").textContent = p.multiSelect ? (on ? "■" : "□") : on ? "●" : "○";
 		});
 		submitBtn.disabled = items.length > 0 && selected.size === 0 && !textarea.value.trim();
 		if (counter) {
