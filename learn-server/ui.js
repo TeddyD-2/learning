@@ -28,6 +28,15 @@ const MIME = {
 	".json": "application/json; charset=utf-8",
 };
 
+const IMAGE_MIME = {
+	".jpg": "image/jpeg",
+	".jpeg": "image/jpeg",
+	".png": "image/png",
+	".gif": "image/gif",
+	".webp": "image/webp",
+	".svg": "image/svg+xml",
+};
+
 /** @type {Set<import('node:http').ServerResponse>} */
 const clients = new Set();
 
@@ -59,11 +68,46 @@ function broadcast(event) {
 	}
 }
 
-/** Record an event in history AND push it to live clients. */
+/** Events that describe the page, not the lesson; they aren't saved. */
+const TRANSIENT = new Set(["session", "reset", "replay"]);
+
+/** Record an event in history, save it beside the session log, and push it to live clients. */
 export function emit(event) {
 	if (event.type === "meta" && event.model) liveModel = event.model;
 	history.push(event);
+	if (mode === "live" && !TRANSIENT.has(event.type)) {
+		try {
+			sessionLog.appendEvent(event);
+		} catch (err) {
+			process.stderr.write(`learn: could not save event: ${err.message}\n`);
+		}
+	}
 	broadcast(event);
+}
+
+/**
+ * Load a saved session's events as this session's history and redraw every
+ * open tab. Prompts that were still waiting when the old server died can't be
+ * answered any more, so they are closed as cancelled; their ids are returned
+ * so the agent can ask them again.
+ */
+export function restore(events) {
+	for (const [id, entry] of pending) {
+		entry.reject(new Error("session replaced"));
+		pending.delete(id);
+	}
+	const closed = new Set(events.filter((e) => e.type === "prompt_resolved" || e.type === "prompt_cancelled").map((e) => e.id));
+	const stale = events.filter((e) => e.type === "prompt" && !closed.has(e.prompt.id)).map((e) => e.prompt.id);
+	history = [...events, ...stale.map((id) => ({ type: "prompt_cancelled", id }))];
+	for (const id of stale) sessionLog.appendEvent({ type: "prompt_cancelled", id });
+	// New prompts must not reuse an id the page already has on screen.
+	const maxId = Math.max(0, ...events.filter((e) => e.type === "prompt").map((e) => Number(String(e.prompt.id).slice(1)) || 0));
+	nextId = Math.max(nextId, maxId + 1);
+	liveModel = [...events].reverse().find((e) => e.type === "meta" && e.model)?.model ?? liveModel;
+	lastSession = null;
+	broadcast({ type: "replay", events: history });
+	noteSession();
+	return stale;
 }
 
 /**
@@ -258,6 +302,24 @@ const server = http.createServer(async (req, res) => {
 		lastSession = null;
 		broadcast({ type: "reset" });
 		json(res, { ok: true });
+		return;
+	}
+
+	// Pictures from the project (e.g. slides a lesson is built on), so a log
+	// block or drill can embed ![](/files/courses/x/images/y.jpg). Images only,
+	// and never outside the project folder.
+	if (url.pathname.startsWith("/files/")) {
+		const rel = decodeURIComponent(url.pathname.slice("/files/".length));
+		const file = path.resolve(sessionLog.PROJECT_ROOT, rel);
+		const ext = path.extname(file).toLowerCase();
+		if (!file.startsWith(sessionLog.PROJECT_ROOT + path.sep) || !IMAGE_MIME[ext]) {
+			res.writeHead(403).end("forbidden");
+			return;
+		}
+		fs.readFile(file, (err, buf) => {
+			if (err) res.writeHead(404).end("not found");
+			else res.writeHead(200, { "content-type": IMAGE_MIME[ext], "cache-control": "max-age=3600" }).end(buf);
+		});
 		return;
 	}
 

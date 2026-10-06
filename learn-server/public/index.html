@@ -15,6 +15,7 @@
 			<span class="bar-path" id="bar-path" title="the file this lesson is being saved to">no session yet</span>
 			<span class="bar-model" id="bar-model" title="self-reported by the teaching agent"></span>
 			<span class="bar-right">
+				<button class="chip map-pill" id="btn-map" type="button" title="show / hide the progress map (m)" hidden>map <span id="map-pill-stats"></span></button>
 				<button class="chip" id="btn-sessions" type="button">sessions</button>
 				<button class="chip" id="btn-new" type="button">new</button>
 				<span class="conn" id="bar-conn">connecting…</span>
@@ -37,6 +38,19 @@
 				<p class="muted">Connecting…</p>
 			</div>
 		</main>
+
+		<aside class="map" id="map" hidden>
+			<div class="map-head">
+				<span class="map-title" id="map-title">map</span>
+				<button class="chip" id="btn-map-toggle" type="button" title="hide the map (m)">hide</button>
+			</div>
+			<div class="map-bar"><div class="map-fill" id="map-fill"></div></div>
+			<div class="map-stats" id="map-stats"></div>
+			<div class="map-body" id="map-body"></div>
+			<div class="map-legend">
+				<span><i class="st todo"></i>todo</span><span><i class="st learning"></i>learning</span><span><i class="st shaky"></i>shaky</span><span><i class="st solid"></i>solid</span>
+			</div>
+		</aside>
 
 		<button class="jump" id="btn-jump" type="button" hidden>↓ latest</button>
 

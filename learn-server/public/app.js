@@ -211,8 +211,9 @@ const DONT_KNOW = "__dont_know__";
 
 function addPrompt(p) {
 	const isQuiz = p.kind === "quiz";
-	const wrap = el("div", "prompt");
-	wrap.appendChild(el("div", "prompt-head", isQuiz ? "quiz" : "question"));
+	const isFree = p.kind === "free";
+	const wrap = el("div", `prompt${isFree ? " free" : ""}`);
+	wrap.appendChild(el("div", "prompt-head", isQuiz ? "quiz" : isFree ? "free response" : "question"));
 
 	const q = el("div", "prompt-q");
 	renderMarkdown(p.question, q);
@@ -262,13 +263,19 @@ function addPrompt(p) {
 	const field = el("div", "field");
 	field.appendChild(el("label", null, freeText ? "your answer" : isQuiz ? "note (optional)" : "other (optional)"));
 	const textarea = document.createElement("textarea");
-	textarea.rows = freeText ? 4 : 2;
-	textarea.placeholder = freeText
+	textarea.rows = isFree ? 10 : freeText ? 4 : 2;
+	textarea.placeholder = isFree
+		? "Write it the way you would on the exam. Specific words from the text, specific details from the image."
+		: freeText
 		? "Type your answer…"
 		: isQuiz
 			? "What were you thinking? Reaches the teacher with your answer."
 			: "Something not listed…";
 	field.appendChild(textarea);
+	// Free response: a live count against the target length, so the learner
+	// practises the exam's sentence budget, not just the content.
+	const counter = isFree ? el("div", "free-count") : null;
+	if (counter) field.appendChild(counter);
 	wrap.appendChild(field);
 
 	const actions = el("div", "actions");
@@ -294,6 +301,12 @@ function addPrompt(p) {
 			row.querySelector(".box").textContent = on ? "[x]" : "[ ]";
 		});
 		submitBtn.disabled = items.length > 0 && selected.size === 0 && !textarea.value.trim();
+		if (counter) {
+			const text = textarea.value.trim();
+			const words = text ? text.split(/\s+/).length : 0;
+			const sentences = text.split(/[.!?]+(?=\s|$)/).filter((s) => s.trim().split(/\s+/).length >= 3).length;
+			counter.textContent = `${sentences} sentence${sentences === 1 ? "" : "s"} · ${words} words${p.target ? ` · aim: ${p.target}` : ""}`;
+		}
 	}
 
 	function toggle(i) {
@@ -408,6 +421,10 @@ function addPrompt(p) {
 function resolvePrompt(id, r) {
 	const ctl = prompts.get(id);
 	if (!ctl) return;
+	if (ctl.isMatch) {
+		ctl.resolve(r);
+		return;
+	}
 	ctl.answered = true;
 	ctl.focused = false;
 	if (activePrompt === ctl) activePrompt = null;
@@ -467,12 +484,431 @@ function resolvePrompt(id, r) {
 function cancelPrompt(id) {
 	const ctl = prompts.get(id);
 	if (!ctl || ctl.answered) return;
+	if (ctl.isMatch) ctl.cancel();
 	ctl.answered = true;
+	ctl.focused = false;
 	if (activePrompt === ctl) activePrompt = null;
+	hint.textContent = "";
 	ctl.el.classList.add("done");
 	ctl.el.querySelector(".actions")?.remove();
-	ctl.el.appendChild(el("div", "explain", "(cancelled)"));
+	ctl.el.querySelector(".field")?.remove();
+	for (const row of ctl.rows || []) row.classList.remove("cursor");
+	// Usually the old session ended before this was answered; resume tells
+	// the teacher, who asks it again.
+	ctl.el.appendChild(el("div", "explain", "(closed before it was answered; the teacher will ask it again)"));
 }
+
+
+// ── matching drill ──────────────────────────────────────────────────────────
+//
+// One card at a time: the prompt big, the answer bank right under it. A pick
+// is graded on the spot. A wrong one is struck out and the card shakes, so a
+// miss is impossible to overlook. "I don't know" shows the answer, and a note
+// box lets the learner say what they were thinking. A card missed goes back to
+// the end of the deck for a retest, so the drill only ends once every answer
+// has been produced cleanly. Graded in the browser so feedback is instant; the
+// full attempt history goes back to the server at the end.
+
+const MATCH_KEYS = "1234567890abcdefghjklopqrstuvwxyz"; // no "i" (I don't know), "n" (note), "m" (map)
+
+function addMatch(p) {
+	const wrap = el("div", "prompt match");
+	wrap.appendChild(el("div", "prompt-head", "drill · match"));
+	const q = el("div", "prompt-q");
+	renderMarkdown(p.question, q);
+	wrap.appendChild(q);
+	if (p.details) {
+		const d = el("div", "prompt-details");
+		renderMarkdown(p.details, d);
+		wrap.appendChild(d);
+	}
+
+	const rows = new Map(p.rows.map((r) => [r.id, r]));
+	/** rowId → { missed, revealed, dontKnow, done, dot } */
+	const state = new Map();
+	const attempts = {}; // rowId → [picked, picked, …]
+	const notes = {}; // rowId → [note, …]
+	const queue = p.rows.map((r) => r.id);
+	let cur = null; // { id, retest, wrong: Set, settled }
+	let seen = 0; // distinct cards shown so far
+
+	// Status line: one dot per card, the score, a timer.
+	const status = el("div", "match-status");
+	const dots = el("div", "match-dots");
+	const scoreEl = el("span", "match-score");
+	const timerEl = el("span", "match-timer", "0:00");
+	status.append(dots, scoreEl, timerEl);
+	wrap.appendChild(status);
+	for (const r of p.rows) {
+		const dot = el("i", "match-dot");
+		dot.title = `card ${state.size + 1}`;
+		dots.appendChild(dot);
+		state.set(r.id, { missed: false, revealed: false, dontKnow: false, done: false, dot });
+	}
+	const started = Date.now();
+	const tick = setInterval(() => {
+		const s = Math.floor((Date.now() - started) / 1000);
+		timerEl.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+	}, 1000);
+
+	// The card.
+	const card = el("div", "match-card");
+	const cardHead = el("div", "match-card-head");
+	const prompt = el("div", "match-prompt");
+	const bank = el("div", "match-bank");
+	const feedback = el("div", "match-feedback");
+	const tools = el("div", "match-tools");
+	const idkBtn = el("button", "chip match-idk", "I don't know (i)");
+	idkBtn.type = "button";
+	const noteIn = el("input", "match-note");
+	noteIn.type = "text";
+	noteIn.placeholder = "note (n): what were you thinking? optional";
+	tools.append(idkBtn, noteIn);
+	const cardActions = el("div", "actions");
+	const nextBtn = el("button", "submit", "NEXT ⏎");
+	nextBtn.type = "button";
+	cardActions.append(nextBtn);
+	card.append(cardHead, prompt, bank, tools, feedback, cardActions);
+	wrap.appendChild(card);
+
+	const chips = new Map(); // value → button
+	p.bank.forEach((value, i) => {
+		const chip = el("button", "match-chip");
+		chip.type = "button";
+		const key = MATCH_KEYS[i];
+		if (key) chip.appendChild(el("span", "chip-key", key));
+		const text = el("span", "chip-text");
+		renderMarkdown(value, text, true);
+		chip.appendChild(text);
+		chip.addEventListener("click", () => pick(value));
+		bank.appendChild(chip);
+		chips.set(value, chip);
+	});
+
+	idkBtn.addEventListener("click", dontKnow);
+	noteIn.addEventListener("keydown", (e) => {
+		if (e.key === "Enter" || e.key === "Escape") {
+			e.preventDefault();
+			noteIn.blur();
+			if (e.key === "Enter") next();
+		}
+	});
+	nextBtn.addEventListener("click", next);
+
+	function refresh() {
+		const all = [...state.values()];
+		const done = all.filter((s) => s.done).length;
+		const clean = all.filter((s) => s.done && !s.missed).length;
+		const missed = all.filter((s) => s.missed).length;
+		scoreEl.textContent = `${clean} first try · ${missed} missed · ${p.rows.length - done} to go`;
+		for (const [id, s] of state) {
+			s.dot.className = `match-dot${s.done ? (s.missed ? " fixed" : " right") : s.missed ? " missed" : ""}${cur?.id === id ? " current" : ""}`;
+		}
+	}
+
+	function show(id) {
+		const r = rows.get(id);
+		const st = state.get(id);
+		cur = { id, retest: st.missed, wrong: new Set(), settled: false };
+		if (!cur.retest) seen++;
+		cardHead.textContent = cur.retest ? "retest · you missed this one earlier" : `card ${seen} of ${p.rows.length}`;
+		cardHead.classList.toggle("retest", cur.retest);
+		renderMarkdown(r.prompt, prompt);
+		for (const chip of chips.values()) {
+			chip.disabled = false;
+			chip.classList.remove("wrong", "right", "answer");
+		}
+		feedback.innerHTML = "";
+		feedback.className = "match-feedback";
+		idkBtn.disabled = false;
+		noteIn.value = "";
+		nextBtn.hidden = true;
+		card.classList.remove("ok", "no");
+		hint.textContent = "pick an answer · click or press its key";
+		refresh();
+		if (card.getBoundingClientRect().top < 0) card.scrollIntoView({ block: "start" });
+	}
+
+	function verdict(cls, text) {
+		feedback.innerHTML = "";
+		feedback.appendChild(el("div", `verdict ${cls}`, text));
+	}
+
+	function explain(r) {
+		if (!r.explanation) return;
+		const why = el("div", "explain");
+		renderMarkdown(r.explanation, why);
+		feedback.appendChild(why);
+	}
+
+	function pick(value) {
+		if (!cur || cur.settled || cur.wrong.has(value)) return;
+		const r = rows.get(cur.id);
+		const st = state.get(cur.id);
+		(attempts[cur.id] ||= []).push(value);
+		const chip = chips.get(value);
+
+		if (value === r.answer) {
+			cur.settled = true;
+			chip.classList.add("right");
+			for (const c of chips.values()) c.disabled = true;
+			card.classList.remove("no");
+			card.classList.add("ok");
+			if (cur.wrong.size) {
+				verdict("ok", `✓ ${r.answer}. Got it on try ${cur.wrong.size + 1}; it comes back at the end for a retest.`);
+				queue.push(cur.id);
+			} else {
+				st.done = true;
+				verdict("ok", cur.retest ? `✓ ${r.answer}. Fixed on the retest.` : `✓ ${r.answer}`);
+			}
+			explain(r);
+			settle();
+			return;
+		}
+
+		// Wrong: strike the chip out, shake the card, say so plainly.
+		st.missed = true;
+		cur.wrong.add(value);
+		chip.classList.add("wrong");
+		chip.disabled = true;
+		card.classList.remove("no");
+		void card.offsetWidth; // restart the shake
+		card.classList.add("no");
+		verdict("no", `✗ Not “${value}”. Try again, or press “I don't know”.`);
+		refresh();
+	}
+
+	function dontKnow() {
+		if (!cur || cur.settled) return;
+		const r = rows.get(cur.id);
+		const st = state.get(cur.id);
+		st.missed = true;
+		st.revealed = true;
+		st.dontKnow = true;
+		cur.settled = true;
+		for (const c of chips.values()) c.disabled = true;
+		chips.get(r.answer)?.classList.add("answer");
+		verdict("idk", `? The answer is “${r.answer}”. It comes back at the end for a retest.`);
+		explain(r);
+		queue.push(cur.id);
+		settle();
+	}
+
+	function settle() {
+		idkBtn.disabled = true;
+		nextBtn.hidden = false;
+		nextBtn.textContent = queue.length ? "NEXT ⏎" : "FINISH ⏎";
+		hint.textContent = "enter for the next card";
+		refresh();
+	}
+
+	function next() {
+		if (!cur?.settled) return;
+		const note = noteIn.value.trim();
+		if (note) (notes[cur.id] ||= []).push(note);
+		if (queue.length) show(queue.shift());
+		else finish();
+	}
+
+	function summary(results) {
+		card.remove();
+		const clean = results.filter((x) => x.firstTry).length;
+		wrap.appendChild(el("div", `verdict ${clean === results.length ? "ok" : "idk"}`, `◆ ${clean}/${results.length} on the first try`));
+		const board = el("div", "match-summary");
+		// Misses first: they are what to study next.
+		for (const x of [...results].sort((a, b) => a.firstTry - b.firstTry)) {
+			const row = el("div", `match-sum-row ${x.firstTry ? "right" : "missed"}`);
+			const mark = el("span", "match-sum-mark", x.firstTry ? "✓" : x.dontKnow ? "?" : x.revealed ? "◆" : "✗");
+			const pr = el("div", "match-prompt");
+			renderMarkdown(x.prompt, pr, true);
+			const ans = el("div", "match-sum-answer");
+			renderMarkdown(x.answer, ans, true);
+			const wrongs = (x.tries || []).filter((t) => t !== x.answer);
+			if (wrongs.length) ans.appendChild(el("div", "match-sum-tried", `you tried: ${[...new Set(wrongs)].join(", ")}`));
+			if (x.notes?.length) ans.appendChild(el("div", "match-sum-note", `your note: ${x.notes.join(" · ")}`));
+			row.append(mark, pr, ans);
+			board.appendChild(row);
+		}
+		wrap.appendChild(board);
+	}
+
+	async function finish() {
+		ctl.answered = true;
+		clearInterval(tick);
+		cur = null;
+		refresh();
+		hint.textContent = "";
+		const revealed = [...state].filter(([, s]) => s.revealed).map(([id]) => id);
+		const idk = [...state].filter(([, s]) => s.dontKnow).map(([id]) => id);
+		summary(
+			p.rows.map((r) => {
+				const tries = attempts[r.id] || [];
+				const rev = revealed.includes(r.id);
+				return { ...r, tries, revealed: rev, dontKnow: idk.includes(r.id), notes: notes[r.id] || [], firstTry: tries[0] === r.answer && !rev };
+			}),
+		);
+		wrap.classList.add("done");
+		const res = await fetch("/answer", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ id: p.id, attempts, revealed, dontKnow: idk, notes }),
+		}).catch(() => null);
+		if (!res || !res.ok) hint.textContent = "drill result rejected (session moved on)";
+	}
+
+	const ctl = {
+		el: wrap,
+		isMatch: true,
+		answered: false,
+		key(e) {
+			if (e.ctrlKey || e.metaKey || e.altKey || e.target.closest?.("input, textarea")) return;
+			if (e.key === "Enter") {
+				e.preventDefault();
+				next();
+				return;
+			}
+			const k = e.key.toLowerCase();
+			if (k === "i" && cur && !cur.settled) {
+				e.preventDefault();
+				dontKnow();
+				return;
+			}
+			if (k === "n" && cur) {
+				e.preventDefault();
+				noteIn.focus();
+				return;
+			}
+			const i = MATCH_KEYS.indexOf(k);
+			if (i >= 0 && i < p.bank.length) {
+				e.preventDefault();
+				pick(p.bank[i]);
+			}
+		},
+		cancel() {
+			clearInterval(tick);
+			cur = null;
+			card.remove();
+			wrap.classList.add("done");
+		},
+		resolve(r) {
+			// Live: finish() already drew the summary. Replay: draw it from the
+			// server's record, since nothing was played in this page.
+			clearInterval(tick);
+			if (!wrap.classList.contains("done")) {
+				ctl.answered = true;
+				cur = null;
+				for (const x of r.results || []) {
+					const s = state.get(x.id);
+					if (s) Object.assign(s, { done: true, missed: !x.firstTry });
+				}
+				refresh();
+				summary(r.results || []);
+				wrap.classList.add("done");
+			}
+			if (activePrompt === ctl) activePrompt = null;
+			hint.textContent = "";
+		},
+	};
+
+	prompts.set(p.id, ctl);
+	activePrompt = ctl;
+	append(wrap);
+	show(queue.shift());
+	return ctl;
+}
+
+// ── progress map ────────────────────────────────────────────────────────────
+
+const mapEl = document.getElementById("map");
+const mapBody = document.getElementById("map-body");
+
+const mapPill = document.getElementById("btn-map");
+const mapPillStats = document.getElementById("map-pill-stats");
+/** Wide screens dock the map beside the lesson; narrow ones open it over it. */
+const narrowMap = window.matchMedia("(max-width: 1000px)");
+
+function renderMap(map) {
+	if (!map || !map.nodes?.length) {
+		mapEl.hidden = true;
+		mapPill.hidden = true;
+		document.body.classList.remove("has-map", "map-open");
+		return;
+	}
+	mapEl.hidden = false;
+	mapPill.hidden = false;
+	document.body.classList.add("has-map");
+	document.getElementById("map-title").textContent = map.title || "map";
+
+	const n = map.nodes.length;
+	const count = (s) => map.nodes.filter((x) => x.status === s).length;
+	// Solid counts fully, shaky/learning partly — the bar is "how much is held".
+	const pct = Math.round(((count("solid") + 0.5 * count("shaky") + 0.25 * count("learning")) / n) * 100);
+	document.getElementById("map-fill").style.width = `${pct}%`;
+	document.getElementById("map-stats").textContent = `${pct}% · ${count("solid")}/${n} solid · ${count("shaky")} shaky`;
+	mapPillStats.textContent = `${count("solid")}/${n}`;
+
+	mapBody.innerHTML = "";
+	let group = null;
+	let list = null;
+	for (const node of map.nodes) {
+		if (!list || (node.group || "") !== group) {
+			group = node.group || "";
+			if (group) mapBody.appendChild(el("div", "map-group", group));
+			list = el("ul", "map-list");
+			mapBody.appendChild(list);
+		}
+		const li = el("li", `map-node ${node.status}${node.id === map.current ? " current" : ""}`);
+		li.title = `${node.label} · ${node.status}`;
+		li.appendChild(el("i", `st ${node.status}`));
+		const label = el("span", "map-label");
+		renderMarkdown(node.label, label, true);
+		li.appendChild(label);
+		list.appendChild(li);
+	}
+	mapBody.querySelector(".current")?.scrollIntoView({ block: "nearest" });
+}
+
+// Wide: the map is docked and the choice to hide it is remembered. Narrow:
+// it is always closed until opened, and closes on a click outside or Esc.
+function mapHiddenPref() {
+	try {
+		return localStorage.getItem("learn.mapHidden") === "1";
+	} catch {
+		return false;
+	}
+}
+
+function setMapHidden(hidden) {
+	document.body.classList.toggle("map-hidden", hidden);
+	try {
+		localStorage.setItem("learn.mapHidden", hidden ? "1" : "0");
+	} catch {
+		/* storage blocked: the choice just won't persist */
+	}
+}
+
+function toggleMap() {
+	if (narrowMap.matches) document.body.classList.toggle("map-open");
+	else setMapHidden(!document.body.classList.contains("map-hidden"));
+}
+
+document.body.classList.toggle("map-hidden", mapHiddenPref());
+mapPill.addEventListener("click", toggleMap);
+document.getElementById("btn-map-toggle").addEventListener("click", () => {
+	if (narrowMap.matches) document.body.classList.remove("map-open");
+	else setMapHidden(true);
+});
+narrowMap.addEventListener("change", () => document.body.classList.remove("map-open"));
+document.addEventListener("click", (e) => {
+	if (document.body.classList.contains("map-open") && !e.target.closest("#map, #btn-map")) {
+		document.body.classList.remove("map-open");
+	}
+}, true); // capture: image clicks stop propagation before it bubbles here
+document.addEventListener("keydown", (e) => {
+	if (e.target.closest?.("input, textarea") || e.ctrlKey || e.metaKey || e.altKey) return;
+	if (e.key === "Escape" && document.body.classList.contains("map-open")) document.body.classList.remove("map-open");
+	else if (e.key === "m" && !mapPill.hidden) toggleMap();
+});
 
 // ── global keyboard ─────────────────────────────────────────────────────────
 
@@ -490,7 +926,8 @@ function apply(ev) {
 	} else if (ev.type === "session") {
 		barPath.textContent = ev.name ? `sessions/${ev.name}` : "no session yet";
 	} else if (ev.type === "log") addLog(ev.markdown);
-	else if (ev.type === "prompt") addPrompt(ev.prompt);
+	else if (ev.type === "prompt") ev.prompt.kind === "match" ? addMatch(ev.prompt) : addPrompt(ev.prompt);
+	else if (ev.type === "progress") renderMap(ev.map);
 	else if (ev.type === "prompt_resolved") resolvePrompt(ev.id, ev.resolution || {});
 	else if (ev.type === "prompt_cancelled") cancelPrompt(ev.id);
 }
@@ -502,6 +939,7 @@ function replay(events) {
 	barPath.textContent = "no session yet";
 	prompts.clear();
 	activePrompt = null;
+	renderMap(null);
 	if (!events.length) {
 		const msg =
 			serverMode === "browse"
@@ -695,3 +1133,22 @@ document.addEventListener("keydown", (e) => {
 });
 
 connect();
+
+// ── image lightbox ──────────────────────────────────────────────────────────
+
+stream.addEventListener("click", (e) => {
+	const img = e.target.closest(".md img, .match-prompt img");
+	if (!img) return;
+	e.stopPropagation();
+	const box = el("div", "lightbox");
+	const big = document.createElement("img");
+	big.src = img.src;
+	big.alt = img.alt;
+	box.appendChild(big);
+	box.addEventListener("click", () => box.remove());
+	document.body.appendChild(box);
+});
+
+document.addEventListener("keydown", (e) => {
+	if (e.key === "Escape") document.querySelector(".lightbox")?.remove();
+});

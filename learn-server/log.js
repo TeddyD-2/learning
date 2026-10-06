@@ -1,6 +1,11 @@
 // log.js — the markdown session log. Replaces the Obsidian vault: the agent
 // mirrors every teaching message into a plain .md file, and the browser UI
 // renders that same markdown live (LaTeX + mermaid included).
+//
+// Beside each <name>.md sits <name>.events.jsonl: every UI event (log blocks,
+// quizzes and their answers, drills, progress-map updates) one JSON per line.
+// The .md is what the learner reads; the .jsonl is what `resume` reloads, so
+// a lesson survives the server (and the Claude Code session) restarting.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -57,7 +62,9 @@ export function setTitle(t) {
 		const body = fs.readFileSync(file, "utf8").replace(/^# .*$/m, `# ${t}`);
 		fs.writeFileSync(file, body, "utf8");
 		const renamed = path.join(path.dirname(file), `${path.basename(file, ".md")}-${slug(t)}.md`);
+		const oldEvents = eventsFile(file);
 		fs.renameSync(file, renamed);
+		if (fs.existsSync(oldEvents)) fs.renameSync(oldEvents, eventsFile(renamed));
 		file = renamed;
 	} catch {
 		/* keep the original name; a wrong filename beats losing the log */
@@ -83,6 +90,45 @@ export function append(markdown) {
 }
 
 export function currentFile() {
+	return file;
+}
+
+function eventsFile(md) {
+	return md.replace(/\.md$/, ".events.jsonl");
+}
+
+/** Persist one UI event to the current session's sidecar. */
+export function appendEvent(event) {
+	const f = ensureFile();
+	fs.appendFileSync(eventsFile(f), `${JSON.stringify({ at: Date.now(), ...event })}\n`, "utf8");
+}
+
+/** Every event saved for a session, oldest first. Empty for logs made before events were saved. */
+export function readEvents(name) {
+	let text;
+	try {
+		text = fs.readFileSync(eventsFile(resolveName(name)), "utf8");
+	} catch {
+		return [];
+	}
+	const events = [];
+	for (const line of text.split("\n")) {
+		if (!line.trim()) continue;
+		try {
+			events.push(JSON.parse(line));
+		} catch {
+			/* a torn last line from a crash: skip it */
+		}
+	}
+	return events;
+}
+
+/** Make a saved session the live one again: new blocks append to its .md and .jsonl. */
+export function adopt(name) {
+	const full = resolveName(name);
+	if (!fs.existsSync(full)) throw new Error(`no saved session named ${name}`);
+	file = full;
+	title = fs.readFileSync(full, "utf8").match(/^# (.*)$/m)?.[1]?.trim() || name;
 	return file;
 }
 
@@ -123,6 +169,7 @@ export function list() {
 				mtime: stat.mtimeMs,
 				size: stat.size,
 				current: name === currentName(),
+				resumable: fs.existsSync(eventsFile(full)),
 			};
 		})
 		.sort((a, b) => b.mtime - a.mtime);
@@ -144,5 +191,7 @@ export function read(name) {
 /** Delete one saved session. The live log can't be deleted out from under itself. */
 export function remove(name) {
 	if (name === currentName()) throw new Error("that is the live session — press `new` first");
-	fs.unlinkSync(resolveName(name));
+	const full = resolveName(name);
+	fs.unlinkSync(full);
+	fs.rmSync(eventsFile(full), { force: true });
 }

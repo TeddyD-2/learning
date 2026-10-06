@@ -448,6 +448,24 @@ body {
 	border-color: var(--accent-dim);
 }
 
+.free-count {
+	margin-top: 4px;
+	font-size: 11px;
+	color: var(--fg-muted);
+	text-align: right;
+}
+
+.prompt.free .prompt-head {
+	background: var(--warn);
+	color: var(--bg);
+}
+
+/* A submitted free response keeps the learner's full answer on screen. */
+.prompt.free .answered {
+	white-space: pre-wrap;
+	color: var(--fg);
+}
+
 .actions {
 	display: flex;
 	align-items: center;
@@ -755,4 +773,474 @@ button.chip:hover {
 .session-list .empty:hover {
 	background: none;
 	border-left-color: transparent;
+}
+
+/* ── matching drill ────────────────────────────────────────────────────── */
+
+.match-status {
+	display: flex;
+	align-items: center;
+	gap: 14px;
+	font-size: 12px;
+	color: var(--fg-dim);
+	padding: 10px 14px;
+}
+
+.match-dots {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+	flex: 1;
+}
+
+.match-dot {
+	width: 10px;
+	height: 10px;
+	border-radius: 50%;
+	border: 1px solid var(--fg-muted);
+	transition: background 0.2s, border-color 0.2s;
+}
+
+.match-dot.current {
+	border-color: var(--accent);
+	box-shadow: 0 0 6px rgba(70, 214, 138, 0.6);
+}
+
+.match-dot.right {
+	background: var(--accent);
+	border-color: var(--accent);
+}
+
+.match-dot.missed {
+	background: var(--error);
+	border-color: var(--error);
+}
+
+/* Missed, then fixed on a retest: still counts as a miss. */
+.match-dot.fixed {
+	background: var(--warn);
+	border-color: var(--warn);
+}
+
+.match-timer {
+	color: var(--fg-muted);
+}
+
+.match-card {
+	margin: 0 14px 14px;
+	border: 1px solid var(--line);
+	background: var(--bg-panel);
+	padding: 14px 16px 6px;
+	transition: border-color 0.2s;
+}
+
+.match-card.ok {
+	border-color: var(--accent-dim);
+}
+
+.match-card.no {
+	border-color: rgba(224, 108, 108, 0.6);
+	animation: match-shake 0.4s;
+}
+
+@keyframes match-shake {
+	20% { transform: translateX(-8px); }
+	40% { transform: translateX(7px); }
+	60% { transform: translateX(-5px); }
+	80% { transform: translateX(3px); }
+}
+
+.match-card-head {
+	font-size: 11px;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--fg-muted);
+	margin-bottom: 10px;
+}
+
+.match-card-head.retest {
+	color: var(--warn);
+}
+
+.match-card .match-prompt {
+	font-size: 15px;
+	margin-bottom: 14px;
+}
+
+.match-card .match-prompt img {
+	max-height: min(44vh, 420px);
+}
+
+.match-bank {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+
+.match-chip {
+	font: inherit;
+	color: var(--fg);
+	padding: 6px 12px;
+	border: 1px solid var(--accent-dim);
+	background: var(--bg-raised);
+	cursor: pointer;
+	display: flex;
+	gap: 8px;
+	align-items: center;
+	transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.match-chip:hover:not(:disabled) {
+	border-color: var(--accent);
+	color: var(--accent);
+}
+
+.match-chip:disabled {
+	cursor: default;
+	opacity: 0.45;
+}
+
+.chip-key {
+	font-size: 11px;
+	color: var(--fg-muted);
+	border: 1px solid var(--line);
+	padding: 0 4px;
+	min-width: 1.6ch;
+	text-align: center;
+}
+
+.match-chip.wrong {
+	opacity: 1;
+	border-color: var(--error);
+	color: var(--error);
+	background: rgba(224, 108, 108, 0.1);
+	text-decoration: line-through;
+}
+
+.match-chip.right {
+	opacity: 1;
+	border-color: var(--accent);
+	color: var(--accent);
+	background: rgba(70, 214, 138, 0.15);
+	box-shadow: 0 0 10px rgba(70, 214, 138, 0.35);
+}
+
+.match-chip.answer {
+	opacity: 1;
+	border-color: var(--warn);
+	color: var(--warn);
+	background: rgba(224, 179, 65, 0.12);
+}
+
+.match-tools {
+	display: flex;
+	gap: 10px;
+	align-items: center;
+	margin-top: 12px;
+}
+
+.match-idk {
+	flex: none;
+}
+
+.match-idk:disabled {
+	opacity: 0.35;
+	cursor: default;
+}
+
+.match-note {
+	flex: 1;
+	min-width: 0;
+	font: inherit;
+	font-size: 12px;
+	color: var(--fg);
+	background: var(--bg);
+	border: 1px solid var(--line);
+	padding: 5px 8px;
+}
+
+.match-note:focus {
+	outline: none;
+	border-color: var(--accent-dim);
+}
+
+.match-sum-note {
+	font-size: 11px;
+	color: var(--fg-dim);
+	margin-top: 2px;
+}
+
+.match-feedback .verdict,
+.match-feedback .explain {
+	margin-left: 0;
+	margin-right: 0;
+}
+
+.match-card .actions {
+	padding-left: 0;
+}
+
+.match-summary {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	margin: 12px 14px 14px;
+}
+
+.match-sum-row {
+	display: grid;
+	grid-template-columns: 2ch 1fr minmax(140px, 40%);
+	gap: 12px;
+	align-items: center;
+	padding: 6px 10px;
+	border: 1px solid var(--line);
+	border-left: 3px solid var(--accent-dim);
+	background: var(--bg-panel);
+}
+
+.match-sum-row.missed {
+	border-left-color: var(--error);
+}
+
+.match-sum-mark {
+	font-weight: 700;
+	color: var(--accent);
+}
+
+.match-sum-row.missed .match-sum-mark {
+	color: var(--error);
+}
+
+.match-sum-answer {
+	color: var(--fg);
+}
+
+.match-sum-tried {
+	font-size: 11px;
+	color: var(--error);
+	margin-top: 2px;
+}
+
+.match-summary .match-prompt img {
+	max-height: 64px;
+}
+
+/* ── progress map ──────────────────────────────────────────────────────── */
+
+.map {
+	position: fixed;
+	right: 0;
+	top: 41px;
+	bottom: 30px;
+	width: 260px;
+	background: var(--bg-panel);
+	border-left: 1px solid var(--line);
+	display: flex;
+	flex-direction: column;
+	font-size: 12px;
+	z-index: 5;
+}
+
+/* Wide: docked beside the lesson, never over it. Hidden means gone. */
+body.has-map:not(.map-hidden) .stream {
+	padding-right: 276px;
+}
+
+body.map-hidden .map {
+	display: none;
+}
+
+.map-pill.on,
+body.has-map:not(.map-hidden) .map-pill {
+	border-color: var(--accent);
+	color: var(--accent);
+}
+
+.map-pill span {
+	color: var(--fg);
+	margin-left: 4px;
+}
+
+.map-head {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	gap: 8px;
+	padding: 8px 10px;
+	border-bottom: 1px solid var(--line);
+	color: var(--accent);
+	font-weight: 700;
+}
+
+.map-bar {
+	height: 4px;
+	background: var(--line);
+	margin: 8px 10px 4px;
+}
+
+.map-fill {
+	height: 100%;
+	width: 0;
+	background: var(--accent);
+	box-shadow: 0 0 6px var(--accent);
+	transition: width 0.4s;
+}
+
+.map-stats {
+	padding: 0 10px 6px;
+	color: var(--fg-dim);
+}
+
+.map-body {
+	flex: 1;
+	overflow-y: auto;
+	padding: 4px 10px 10px;
+}
+
+.map-group {
+	color: var(--fg-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.08em;
+	font-size: 11px;
+	margin: 10px 0 4px;
+}
+
+.map-list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+
+.map-node {
+	display: flex;
+	gap: 8px;
+	align-items: center;
+	white-space: nowrap;
+	padding: 3px 6px;
+	color: var(--fg-dim);
+	border-left: 2px solid transparent;
+}
+
+.map-node.solid {
+	color: var(--fg);
+}
+
+.map-node.current {
+	border-left-color: var(--accent);
+	background: var(--bg-raised);
+	color: var(--accent);
+}
+
+.map-label {
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.st {
+	display: inline-block;
+	flex: none;
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	border: 1px solid var(--fg-muted);
+}
+
+.st.learning {
+	border-color: var(--accent);
+	background: linear-gradient(90deg, var(--accent) 50%, transparent 50%);
+}
+
+.st.shaky {
+	border-color: var(--warn);
+	background: var(--warn);
+}
+
+.st.solid {
+	border-color: var(--accent);
+	background: var(--accent);
+	box-shadow: 0 0 4px var(--accent);
+}
+
+.map-legend {
+	display: flex;
+	justify-content: space-between;
+	padding: 6px 10px;
+	border-top: 1px solid var(--line);
+	color: var(--fg-muted);
+	font-size: 11px;
+}
+
+.map-legend span {
+	display: flex;
+	gap: 4px;
+	align-items: center;
+}
+
+@media (max-width: 900px) {
+	.match-sum-row {
+		grid-template-columns: 2ch 1fr;
+	}
+	.match-sum-answer {
+		grid-column: 2;
+	}
+}
+
+/* Narrow: closed until opened from the top-bar pill, then over the lesson. */
+@media (max-width: 1000px) {
+	body.has-map:not(.map-hidden) .stream {
+		padding-right: 16px;
+	}
+	.map,
+	body.map-hidden .map {
+		display: flex;
+		width: min(300px, 85vw);
+		box-shadow: -10px 0 30px rgba(0, 0, 0, 0.6);
+		transform: translateX(105%);
+		transition: transform 0.2s;
+		z-index: 20;
+	}
+	body.map-open .map {
+		transform: none;
+	}
+	body.map-open .map-pill {
+		border-color: var(--accent);
+		color: var(--accent);
+	}
+	body.has-map:not(.map-open) .map-pill {
+		border-color: var(--line);
+		color: var(--fg-dim);
+	}
+}
+
+/* Images in lessons and drills: click to enlarge. */
+.md img {
+	max-height: 420px;
+	cursor: zoom-in;
+	border: 1px solid var(--line);
+}
+
+.match-prompt img {
+	display: block;
+	max-height: 140px;
+	max-width: 100%;
+	margin-top: 4px;
+	cursor: zoom-in;
+	border: 1px solid var(--line);
+}
+
+.lightbox {
+	position: fixed;
+	inset: 0;
+	z-index: 50;
+	background: rgba(0, 0, 0, 0.88);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	cursor: zoom-out;
+}
+
+.lightbox img {
+	max-width: 94vw;
+	max-height: 92vh;
+	border: 1px solid var(--accent-dim);
 }
